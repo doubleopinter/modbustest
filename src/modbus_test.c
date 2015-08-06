@@ -42,12 +42,12 @@ int mmodbus(void)
 	//int timeout;
 //	uint32_t old_response_to_sec;
 //	uint32_t old_response_to_usec;
-	uint16_t holding_read[64];
+	uint16_t holding_read[128];
 	int read_result;
 	FILE *fp;
 	time_t rawtime;
 	struct tm * timeinfo;
-
+	int i;
 
 
 
@@ -86,13 +86,16 @@ int mmodbus(void)
 	    {
 			time ( &rawtime );
 			timeinfo = localtime ( &rawtime );
-	        read_result = modbus_read_registers(ctx, 0, 1, holding_read);
-	        printf("40001: %d %s %s", holding_read[0], "Time: ", asctime (timeinfo));
+	        read_result = modbus_read_registers(ctx, 0, 10, holding_read);
+	        for (i = 10; i > 0; i--) {
 
+
+	        	printf("4000%d: %d %s %s", i, holding_read[i], "Time: ", asctime (timeinfo));
+	        }
 	        //Print contents to file
 
-	        fprintf(fp, "40001: %d %s %s", holding_read[0], "Time: ", asctime (timeinfo));
-	        fflush(fp);
+	        //fprintf(fp, "40001: %d %s %s", holding_read[0], "Time: ", asctime (timeinfo));
+	        //fflush(fp);
 	        a--;
 	        sleep(1);
 	    }
@@ -104,7 +107,7 @@ int mmodbus(void)
 
 int main(void)
 {
-	sqlstuff();
-
+	//sqlstuff();
+	mmodbus();
 	return 0;
 }
