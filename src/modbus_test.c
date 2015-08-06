@@ -5,6 +5,7 @@
 #include <time.h>
 #include <unistd.h>
 #include <sqlite3.h>
+#include <pthread.h>
 
 enum {
     TCP,
@@ -48,13 +49,10 @@ int mmodbus(void)
 	time_t rawtime;
 	struct tm * timeinfo;
 	int i;
+	pthread_t id = pthread_self();
 
 
-
-	//printf ( "Current local time and date: %s", asctime (timeinfo) );
-
-
-
+	printf("%d", id);
 	ctx = modbus_new_tcp("192.168.10.53", 502);
 	modbus_set_slave(ctx, 1);
 
@@ -80,14 +78,14 @@ int mmodbus(void)
 	printf("Connected\n");
 
 	//printf("Reading register 40001\n");
-	fp = fopen("/tmp/modbus.txt", "a");
-	a = 10;
-	while( a!=0 ) //Ascii code for ctrl + A == 1
+	//fp = fopen("/tmp/modbus.txt", "a");
+	//a = 10;
+	while(1) //Ascii code for ctrl + A == 1
 	    {
 			time ( &rawtime );
 			timeinfo = localtime ( &rawtime );
 	        read_result = modbus_read_registers(ctx, 0, 10, holding_read);
-	        for (i = 10; i > 0; i--) {
+	        for (i = 8; i > -1; i--) {
 
 
 	        	printf("4000%d: %d %s %s", i, holding_read[i], "Time: ", asctime (timeinfo));
@@ -96,10 +94,9 @@ int mmodbus(void)
 
 	        //fprintf(fp, "40001: %d %s %s", holding_read[0], "Time: ", asctime (timeinfo));
 	        //fflush(fp);
-	        a--;
 	        sleep(1);
 	    }
-	fclose(fp);
+	//fclose(fp);
 	modbus_close(ctx);
 	modbus_free(ctx);
 	return 0;
@@ -107,7 +104,16 @@ int mmodbus(void)
 
 int main(void)
 {
+	pthread_t tid;
+
 	//sqlstuff();
-	mmodbus();
+	//mmodbus();
+	pthread_create(&tid, NULL, &mmodbus, NULL);
+
+	printf ( "Press [Enter] to continue . . ." );
+	fflush ( stdout );
+	getchar();
+	printf("Testicles");
+
 	return 0;
 }

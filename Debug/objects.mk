@@ -4,5 +4,5 @@
 
 USER_OBJS :=
 
-LIBS := -lmodbus -lsqlite3
+LIBS := -lmodbus -lpthread -lsqlite3
 
