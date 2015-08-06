@@ -7,25 +7,30 @@
 #include <sqlite3.h>
 #include <pthread.h>
 
+#define ANALOG_IN 1
+
 enum {
     TCP,
     TCP_PI,
     RTU
 };
 
-int sqlstuff(int pt, int typ, int val, char *ts, int rtu, int pro)
+struct arg_struct {
+    char *ip;
+    int interval;
+    int start_point;
+    int length;
+};
+
+int sqlstuff(int start_pt, int length, int typ, uint16_t *val, char *ts, int rtu, int pro)
 {
 	sqlite3 *db;
-	int rc;
-	char *sql;
+	int rc; /* SQL transaction result code */
 	char *insert_sql = "INSERT INTO history (PNTNO, TYPE, VALUE ,TIMESTAMP, RTUNO, PROTOCOL) VALUES (?,?,?,?,?,?)";
 	sqlite3_stmt *stmt;
-	char message[255];
-	int temp = 999;
+	int i;
 
-	//sql = "select * from pointdb";
-	//sql = "INSERT INTO pointdb (PN,Value,Timestamp) VALUES (40001, 34, '03082015 01:11:11'); ";
-
+	//Open the connection to database
 	printf("Opening DB\n");
 	rc = sqlite3_open("/home/pinter/build/test.db", &db);
 	if (rc != SQLITE_OK) {
@@ -36,120 +41,117 @@ int sqlstuff(int pt, int typ, int val, char *ts, int rtu, int pro)
 	printf("Opened db OK\n\r") ;
 
 	/* prepare the sql, leave stmt ready for loop */
-	rc = sqlite3_prepare_v2(db, insert_sql, strlen(insert_sql)+1, &stmt, NULL) ;
-	if (rc != SQLITE_OK) {
-		printf("Failed to prepare database %s\n\r",sqlite3_errstr(rc)) ;
-		sqlite3_close(db) ;
-		return 2;
-	}
-	printf("SQL prepared ok\n\r") ;
 
-	/* bind parameters */
-		sqlite3_bind_int(stmt, 1, pt); /* index 1 in stmt - point number */
+
+	for (i = 0; i < length; i++) {
+		rc = sqlite3_prepare_v2(db, insert_sql, strlen(insert_sql)+1, &stmt, NULL) ;
+		if (rc != SQLITE_OK) {
+			printf("Failed to prepare database %s\n\r",sqlite3_errstr(rc)) ;
+			sqlite3_close(db) ;
+			return 2;
+		}
+		printf("SQL prepared ok\n\r") ;
+
+		/* bind parameters */
+		printf("Array Val: %d\n", val[0]);
+		sqlite3_bind_int(stmt, 1, start_pt + i); /* index 1 in stmt - point number */
 		sqlite3_bind_int(stmt, 2, typ); /* Type */
-		sqlite3_bind_int(stmt, 3, val); /* Value */
+		sqlite3_bind_int(stmt, 3, val[i]); /* Value */
 		sqlite3_bind_text(stmt, 4, ts, strlen(ts), SQLITE_STATIC);/* Time*/
 		sqlite3_bind_int(stmt,5, rtu); /* RTUNO */
 		sqlite3_bind_int(stmt, 6, pro); /* Protocol */
 
 
 		rc = sqlite3_step(stmt);
-
+		if (rc != SQLITE_DONE) {
+			printf("Failed to step %s\n\r",sqlite3_errstr(rc)) ;
+			printf("Breaking from write operation\n");
+			break;
+			//return 2;
+		}
+		rc = sqlite3_finalize(stmt);
+	}
+	printf("SQL write complete\n");
 	    /* finish off */
-		sqlite3_close(db);
-/*8
-	printf("Result %d\n", rc);
-	printf("Time to write something\n");
-	rc = sqlite3_exec(db, sql, NULL, NULL, NULL);
-	printf("Result %d\n", rc);
-	printf("Close DB");
 	sqlite3_close(db);
-*/
 	return 0;
 }
 
-int mmodbus(void)
+//Function for modbus holidng register polling
+void modbus_holding_poll(void *arguments)
 {
-	int a;
-	//int backend = TCP;
-	int connection;
+	struct arg_struct *args = arguments;
 	modbus_t *ctx;
-	//int timeout;
-//	uint32_t old_response_to_sec;
-//	uint32_t old_response_to_usec;
 	uint16_t holding_read[128];
 	int read_result;
-	FILE *fp;
+	//FILE *fp;
 	time_t rawtime;
 	struct tm * timeinfo;
 	int i;
-	pthread_t id = pthread_self();
 
-	//SQL connection
-	sqlite3 *db;
-	int rc;
-	char *sql;
-
-	rc = sqlite3_open("/home/pinter/build/test.db", &db);
-	ctx = modbus_new_tcp("192.168.10.53", 502);
+	ctx = modbus_new_tcp(args->ip, 502);
 	modbus_set_slave(ctx, 1);
 
 	/* Save original timeout */
 	//modbus_get_response_timeout(ctx, &old_response_to_sec, &old_response_to_usec);
 
 	//printf("Seconds: %d %s %d\n", old_response_to_usec, " uSeconds:", old_response_to_sec, "\n");
-//	modbus_set_response_timeout(ctx, 0, 200);
+	//modbus_set_response_timeout(ctx, 0, 200);
 
 	if (ctx == NULL) {
 	    fprintf(stderr, "Unable to allocate libmodbus context\n");
-	    return -1;
+	    //return -1;
 	}
 
-	/*if (modbus_connect(ctx) == -1) {
+	if (modbus_connect(ctx) == -1) {
 	    fprintf(stderr, "Connection failed: %s\n", modbus_strerror(errno));
 	    printf("Not Connected");
 	    modbus_free(ctx);
-	    return -1;
-	}*/
-
-	connection = modbus_connect(ctx);
+	    //return -1;
+	}
 	printf("Connected\n");
 
-	//printf("Reading register 40001\n");
-	//fp = fopen("/tmp/modbus.txt", "a");
-	//a = 10;
-	while(1) //Ascii code for ctrl + A == 1
-	    {
-			time ( &rawtime );
-			timeinfo = localtime ( &rawtime );
-	        read_result = modbus_read_registers(ctx, 0, 10, holding_read);
-	        for (i = 8; i > -1; i--) {
-	        	sqlstuff(i, 1, holding_read[i], asctime(timeinfo), 1, 1);
-	        	printf("4000%d: %d %s %s", i, holding_read[i], "Time: ", asctime (timeinfo));
-	        }
-	        //Print contents to file
+	while(1) {
+		//Get current system time
+		time(&rawtime);
+		timeinfo = localtime(&rawtime);
 
-	        //fprintf(fp, "40001: %d %s %s", holding_read[0], "Time: ", asctime (timeinfo));
-	        //fflush(fp);
-	        sleep(1);
+		//Perform the modbus scan
+		read_result = modbus_read_registers(ctx, args->start_point, args->length, holding_read);
+		if (read_result == -1) {
+		    printf("MODBUS polling error, program mad!\n");
+			fprintf(stderr, "%s\n", modbus_strerror(errno));
+		    break;
+		}
+        sqlstuff(args->start_point, args->length, ANALOG_IN, holding_read, asctime(timeinfo), 1, 1);
+
+        if (args->interval <= 1) {
+        	sleep(1);
+	    } else if (args->interval > 10) {
+	    	sleep(10);
+	    } else {
+	    	sleep(args->interval);
 	    }
-	//
-	//fclose(fp);
+	}
+
 	modbus_close(ctx);
 	modbus_free(ctx);
-	return 0;
 }
 
 int main(void)
 {
 	pthread_t tid;
+	struct arg_struct args;
 
-	//sqlstuff();
+	args.ip = "192.168.10.53";
+	args.start_point = 0;
+	args.length = 5;
+	args.interval = 1;
 
-	pthread_create(&tid, NULL, &mmodbus, NULL);
+	pthread_create(&tid, NULL, &modbus_holding_poll, (void *)&args);
 
-	printf ( "Press [Enter] to continue . . ." );
-	fflush ( stdout );
+	printf("Press [Enter] to continue . . .");
+	fflush(stdout);
 	getchar();
 	printf("Testicles");
 
